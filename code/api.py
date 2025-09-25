@@ -36,6 +36,7 @@ CHALLENGE_WORDS = [
 def check_audio_dependencies():
     """Check if audio processing dependencies are available"""
     try:
+        # Check if ffmpeg is available
         from pydub.utils import which
         if which("ffmpeg") is None:
             print("Warning: ffmpeg not found")
@@ -60,12 +61,15 @@ def initialize_speech_recognition():
 class AdvancedLivenessDetector:
     def __init__(self):
         self.MIN_MOVE = 20
-        self.challenge_phrase = random.choice(CHALLENGE_WORDS)
-    
+        self.challenge_phrase = random.choice(CHALLENGE_WORDS)  # 👈 keep this
+
+        
+        # Initialize multiple face detection methods for maximum reliability
         self.detector = None
         self.use_opencv_detector = False
         self.use_mediapipe_detector = False
         
+        # Method 1: Try dlib
         try:
             self.detector = dlib.get_frontal_face_detector()
             print("dlib face detector initialized successfully")
@@ -73,6 +77,7 @@ class AdvancedLivenessDetector:
             print(f"dlib detector failed: {e}")
             self.detector = None
         
+        # Method 2: OpenCV Haar Cascades
         try:
             self.cv_detector = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
             if self.cv_detector.empty():
@@ -82,6 +87,7 @@ class AdvancedLivenessDetector:
             print(f"OpenCV detector failed: {e}")
             self.cv_detector = None
         
+        # Method 3: MediaPipe Face Detection
         try:
             self.mp_face_detection = mp.solutions.face_detection
             self.face_detection = self.mp_face_detection.FaceDetection(
@@ -93,6 +99,7 @@ class AdvancedLivenessDetector:
             print(f"MediaPipe face detector failed: {e}")
             self.face_detection = None
         
+        # Initialize MediaPipe for hand detection
         try:
             self.mp_hands = mp.solutions.hands
             self.hands = self.mp_hands.Hands(
@@ -105,6 +112,7 @@ class AdvancedLivenessDetector:
             print(f"MediaPipe hands failed: {e}")
             self.hands = None
         
+        # Check audio dependencies
         if not check_audio_dependencies():  
             print("Warning: Some audio dependencies may be missing")
 
@@ -112,12 +120,13 @@ class AdvancedLivenessDetector:
         if self.recognizer is None:
             print("Failed to initialize speech recognition")
         
+        # Define the 3-step verification process
         self.steps = self._generate_verification_steps()
         self.current_step_index = 0
         self.last_face_center = None
         self.is_verified = False
         self.step_start_time = time.time()
-        self.step_timeout = 30
+        self.step_timeout = 30  # 30 seconds per step
 
     def _generate_verification_steps(self):
         # Step 1: Face movement
@@ -169,12 +178,15 @@ class AdvancedLivenessDetector:
             return []
         
         try:
+            # Ensure the image is the right format for dlib
             if gray_image.dtype != np.uint8:
                 gray_image = gray_image.astype(np.uint8)
             
+            # Ensure contiguous memory layout
             if not gray_image.flags['C_CONTIGUOUS']:
                 gray_image = np.ascontiguousarray(gray_image, dtype=np.uint8)
             
+            # Make sure it's single channel
             if len(gray_image.shape) != 2:
                 if len(gray_image.shape) == 3 and gray_image.shape[2] == 1:
                     gray_image = gray_image.squeeze(axis=2)
@@ -204,6 +216,7 @@ class AdvancedLivenessDetector:
             )
             print(f"OpenCV detected {len(faces)} faces")
             
+            # Convert to dlib-like rectangle objects for consistency
             dlib_rects = []
             for (x, y, w, h) in faces:
                 class Rectangle:
@@ -248,6 +261,7 @@ class AdvancedLivenessDetector:
             
             print(f"MediaPipe detected {len(results.detections)} faces")
             
+            # Convert to dlib-like rectangle objects
             dlib_rects = []
             h, w = rgb_image.shape[:2]
             
@@ -290,6 +304,7 @@ class AdvancedLivenessDetector:
         """Detect faces using multiple methods as fallbacks"""
         faces = []
         
+        # Convert to grayscale for dlib and OpenCV
         if len(frame.shape) == 3:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -297,16 +312,19 @@ class AdvancedLivenessDetector:
             gray = frame
             rgb = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
         
+        # Try dlib first
         if self.detector is not None:
             faces = self._detect_faces_dlib(gray)
             if faces:
                 return faces
         
+        # Try OpenCV as fallback
         if self.cv_detector is not None:
             faces = self._detect_faces_opencv(gray)
             if faces:
                 return faces
         
+        # Try MediaPipe as final fallback
         if self.face_detection is not None:
             faces = self._detect_faces_mediapipe(rgb)
             if faces:
@@ -325,6 +343,7 @@ class AdvancedLivenessDetector:
         delta_x = current_center[0] - last_center[0]
         delta_y = current_center[1] - last_center[1]
         
+        # Note: In image coordinates, Y increases downward
         if abs(delta_x) > abs(delta_y):
             if delta_x > min_move:
                 return 'RIGHT'  # Face moved right in image
@@ -526,6 +545,7 @@ class AdvancedLivenessDetector:
             self.last_face_center = current_center
 
         elif current_step["type"] == "gesture":
+            # Convert BGR to RGB for MediaPipe
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             detected_gesture = self._detect_hand_gesture(rgb_frame)
             print(f"Detected gesture: {detected_gesture}, Expected: {current_step['gesture']}")
@@ -608,6 +628,7 @@ class AdvancedLivenessDetector:
             # Recognize speech using Google Speech Recognition
                 
             if audio_content is None:
+            # Handle the error gracefully, maybe log it and return a message to the frontend.
                 return {"success": False, "message": "Could not transcribe audio. Please try again."}
 
 
@@ -769,4 +790,3 @@ def health_check():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-
